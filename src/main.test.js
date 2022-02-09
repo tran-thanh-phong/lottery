@@ -3,8 +3,8 @@ beforeAll(async function () {
   const near = await nearlib.connect(nearConfig)
   window.accountId = nearConfig.contractName
   window.contract = await near.loadContract(nearConfig.contractName, {
-    viewMethods: ['get_greeting'],
-    changeMethods: [],
+    viewMethods: ['get_owner_id', 'get_account_balance'],
+    changeMethods: ['new', 'deposit', 'create_jackpot', 'get_jackpots'],
     sender: window.accountId
   })
 
@@ -20,9 +20,40 @@ beforeAll(async function () {
       return window.accountId
     }
   }
+
+  console.log('Initializing contract...');
+  await initContract();
+  console.log('Contract initialized.');
 })
 
-test('get_greeting', async () => {
-  const message = await window.contract.get_greeting({ account_id: window.accountId })
-  expect(message).toEqual('Hello')
+async function initContract() {
+  try {
+    await window.contract.new({ owner_id: window.accountId });
+  } catch (e) {
+    if (!/Already initialized!/.test(e.toString())) {
+      throw e;
+    }
+  }
+}
+
+const nearAPI = require('near-api-js');
+const { KeyPair, Account, utils: { format: { parseNearAmount }} } = nearAPI;
+
+const GAS = "200000000000000";
+
+test('get_owner_id', async () => {
+  const ownerId = await window.contract.get_owner_id()
+  expect(ownerId).toEqual(window.accountId)
+})
+
+test('get_account_balance', async () => {
+  const balance = await window.contract.get_account_balance({ account_id: window.accountId })
+  expect('0').toEqual(balance)
+})
+
+test('deposit', async () => {
+  const depositAmount = parseNearAmount('1');
+  await window.contract.deposit({}, GAS, depositAmount)
+  const balance = await window.contract.get_account_balance({ account_id: window.accountId })
+  expect(depositAmount).toEqual(balance)
 })

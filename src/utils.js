@@ -2,6 +2,7 @@ import { connect, Contract, keyStores, WalletConnection } from 'near-api-js'
 import getConfig from './config'
 
 const nearConfig = getConfig(process.env.NODE_ENV || 'development')
+const { formatNearAmount } = require('near-api-js/lib/utils/format');
 
 // Initialize contract & set global variables
 export async function initContract() {
@@ -18,10 +19,32 @@ export async function initContract() {
   // Initializing our contract APIs by contract name and configuration
   window.contract = await new Contract(window.walletConnection.account(), nearConfig.contractName, {
     // View methods are read only. They don't modify the state, but usually return some value.
-    viewMethods: ['get_greeting'],
+    viewMethods: ['get_owner_id', 'get_account_balance', 'get_jackpots', 'get_account_info_or_default', 'get_account_tickets'],
     // Change methods can modify the state. But you don't receive the returned value when called.
-    changeMethods: ['set_greeting'],
+    changeMethods: ['new', 'set_owner_id', 'create_jackpot', 'deposit', 'withdraw', 'buy_ticket', 'draw_jackpot'],
   })
+
+  //await initializeContract();
+
+  // Account balance
+  console.log("Account Id: ", window.accountId);
+  if (window.accountId) {
+    const account = await near.account(window.accountId);
+    window.accountBalance = formatNearAmount((await account.getAccountBalance()).available, 2);  
+  }
+
+  window.contractOwnerId = await window.contract.get_owner_id({})
+}
+
+export async function initializeContract() {
+  try {
+    await window.contract.new({ owner_id: window.accountId });
+  } catch (e) {
+    if (!/Already initialized!/.test(e.toString())) {
+      //throw e;
+      console.log(e);
+    }
+  }
 }
 
 export function logout() {

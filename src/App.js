@@ -5,10 +5,17 @@ import './global.css'
 
 import getConfig from './config'
 const { networkId } = getConfig(process.env.NODE_ENV || 'development')
+const nearAPI = require('near-api-js');
+const { KeyPair, Account, utils: { format: { parseNearAmount, formatNearAmount }} } = nearAPI;
+
+const GAS = "200000000000000";
 
 export default function App() {
   // use React Hooks to store greeting in component state
-  const [greeting, set_greeting] = React.useState()
+  const [claimableAmount, setClaimableAmount] = React.useState(0)
+  const [jackpots, setJackpots] = React.useState([])
+  const [accountTickets, setAccountTickets] = React.useState([])
+  const [accountInfo, setAccountInfo] = React.useState({})
 
   // when the user has not yet interacted with the form, disable the button
   const [buttonDisabled, setButtonDisabled] = React.useState(true)
@@ -22,13 +29,13 @@ export default function App() {
     () => {
       // in this case, we only care to query the contract when signed in
       if (window.walletConnection.isSignedIn()) {
-
-        // window.contract is set by initContract in index.js
-        window.contract.get_greeting({ account_id: window.accountId })
-          .then(greetingFromContract => {
-            set_greeting(greetingFromContract)
-          })
+        
       }
+
+      getClaimableAmountFromContract()
+      getJackpotListFromContract()
+      getAccountInfoFromContract()
+      getAccountTicketsFromContract()
     },
 
     // The second argument to useEffect tells React when to re-run the effect
@@ -37,25 +44,49 @@ export default function App() {
     []
   )
 
+  function getClaimableAmountFromContract() {
+    if (window.walletConnection.isSignedIn()) {
+      // window.contract is set by initContract in index.js
+      window.contract.get_account_balance({ account_id: window.accountId })
+        .then(result => {
+          setClaimableAmount(formatNearAmount(result))
+        })
+    }
+  }
+
+  function getJackpotListFromContract() {
+    window.contract.get_jackpots({})
+      .then(result => {
+        console.log('Get jackpot list from contract: ', result)
+        setJackpots(result)
+      })
+  }
+
+  function getAccountInfoFromContract() {
+    window.contract.get_account_info_or_default({account_id: window.accountId})
+      .then(result => {
+        console.log('Get Account Info from contract: ', result)
+        setAccountInfo(result)
+      })
+  }
+
+  function getAccountTicketsFromContract() {
+    window.contract.get_account_tickets({account_id: window.accountId})
+      .then(result => {
+        console.log('Get Account Tickets from contract: ', result)
+        setAccountTickets(result)
+      })
+  }
+
   // if not signed in, return early with sign-in prompt
   if (!window.walletConnection.isSignedIn()) {
     return (
       <main>
-        <h1>Welcome to NEAR!</h1>
-        <p>
-          To make use of the NEAR blockchain, you need to sign in. The button
-          below will sign you in using NEAR Wallet.
+        <h1>Welcome to The Lottery!</h1>
+        <p style={{ textAlign: 'center'}}>
+          Please sign in:
         </p>
-        <p>
-          By default, when your app runs in "development" mode, it connects
-          to a test network ("testnet") wallet. This works just like the main
-          network ("mainnet") wallet, but the NEAR Tokens on testnet aren't
-          convertible to other currencies – they're just for testing!
-        </p>
-        <p>
-          Go ahead and click the button below to try it out:
-        </p>
-        <p style={{ textAlign: 'center', marginTop: '2.5em' }}>
+        <p style={{ textAlign: 'center', marginTop: '1em' }}>
           <button onClick={login}>Sign in</button>
         </p>
       </main>
@@ -71,35 +102,34 @@ export default function App() {
       <main>
         <h1>
           <label
-            htmlFor="greeting"
+            htmlFor="depositInput"
             style={{
               color: 'var(--secondary)',
               borderBottom: '2px solid var(--secondary)'
             }}
           >
-            {greeting}
           </label>
           {' '/* React trims whitespace around tags; insert literal space character when needed */}
-          {window.accountId}!
+          {window.accountId}
         </h1>
+        <p>
+          Wallet balance: <strong>{window.accountBalance} NEAR</strong> 
+        </p>
         <form onSubmit={async event => {
           event.preventDefault()
 
           // get elements from the form using their id attribute
-          const { fieldset, greeting } = event.target.elements
+          const { fieldset, depositInput } = event.target.elements
 
           // hold onto new user-entered value from React's SynthenticEvent for use after `await` call
-          const newGreeting = greeting.value
+          const depositAmount = depositInput.value
 
           // disable the form while the value gets updated on-chain
           fieldset.disabled = true
 
           try {
             // make an update call to the smart contract
-            await window.contract.set_greeting({
-              // pass the value that the user entered in the greeting field
-              message: newGreeting
-            })
+            await window.contract.deposit({}, GAS, parseNearAmount(depositAmount))
           } catch (e) {
             alert(
               'Something went wrong! ' +
@@ -112,8 +142,7 @@ export default function App() {
             fieldset.disabled = false
           }
 
-          // update local `greeting` variable to match persisted value
-          set_greeting(newGreeting)
+          getClaimableAmountFromContract()
 
           // show Notification
           setShowNotification(true)
@@ -126,48 +155,193 @@ export default function App() {
         }}>
           <fieldset id="fieldset">
             <label
-              htmlFor="greeting"
+              htmlFor="depositInput"
               style={{
                 display: 'block',
                 color: 'var(--gray)',
                 marginBottom: '0.5em'
               }}
             >
-              Change greeting
+              Deposit amount
             </label>
             <div style={{ display: 'flex' }}>
               <input
                 autoComplete="off"
-                defaultValue={greeting}
-                id="greeting"
-                onChange={e => setButtonDisabled(e.target.value === greeting)}
+                type="number"
+                id="depositInput"
+                onChange={e => setButtonDisabled(e.target.value <= 0)}
                 style={{ flex: 1 }}
               />
               <button
                 disabled={buttonDisabled}
                 style={{ borderRadius: '0 5px 5px 0' }}
               >
-                Save
+                Deposit
               </button>
             </div>
           </fieldset>
         </form>
-        <p>
-          Look at that! A Hello World app! This greeting is stored on the NEAR blockchain. Check it out:
-        </p>
-        <ol>
-          <li>
-            Look in <code>src/App.js</code> and <code>src/utils.js</code> – you'll see <code>get_greeting</code> and <code>set_greeting</code> being called on <code>contract</code>. What's this?
-          </li>
-          <li>
-            Ultimately, this <code>contract</code> code is defined in <code>assembly/main.ts</code> – this is the source code for your <a target="_blank" rel="noreferrer" href="https://docs.near.org/docs/develop/contracts/overview">smart contract</a>.</li>
-          <li>
-            When you run <code>yarn dev</code>, the code in <code>assembly/main.ts</code> gets deployed to the NEAR testnet. You can see how this happens by looking in <code>package.json</code> at the <code>scripts</code> section to find the <code>dev</code> command.</li>
-        </ol>
+        
         <hr />
-        <p>
-          To keep learning, check out <a target="_blank" rel="noreferrer" href="https://docs.near.org">the NEAR docs</a> or look through some <a target="_blank" rel="noreferrer" href="https://examples.near.org">example apps</a>.
-        </p>
+        {/* Normal Account Section */}
+        <form onSubmit={async event => {
+          event.preventDefault()
+
+          try {
+            // make an update call to the smart contract
+            await window.contract.withdraw({}, GAS)
+          } catch (e) {
+            alert('Something went wrong!')
+            throw e
+          } finally {
+            // re-enable the form, whether the call succeeded or failed
+            //fieldset.disabled = false
+          }
+
+          getClaimableAmountFromContract()
+
+        }}>
+          <p>
+            Claimable amount: <strong> {claimableAmount} NEAR</strong>
+          </p>
+          <button
+            style={{ borderRadius: '0 5px 5px 0' }}
+            disabled={claimableAmount <= 0}
+          >
+            Claim
+          </button>
+        </form>
+
+        <form onSubmit={async event => {
+          event.preventDefault()
+
+          const { num1, num2, num3, num4, num5, num6 } = event.target.elements
+          const numbers = [parseInt(num1.value), parseInt(num2.value), parseInt(num3.value), parseInt(num4.value), parseInt(num5.value), parseInt(num6.value)];
+
+          try {
+            // make an update call to the smart contract
+            await window.contract.buy_ticket({ picked_numbers: numbers }, GAS)
+          } catch (e) {
+            alert('Something went wrong!')
+            throw e
+          } finally {
+            // re-enable the form, whether the call succeeded or failed
+            //fieldset.disabled = false
+          }
+        }}>
+          <p>
+            Please choose 6 lucky numbers between 1 to 55. Ticket price equals to 1 NEAR.
+          </p>
+          <div style={{ display: 'flex', gap: '20px'}}>
+            <input id='num1' style={{ width: '60px' }} type="text" min={1} max={55} />
+            <input id='num2' style={{ width: '60px' }} type="text" min={1} max={55} />
+            <input id='num3' style={{ width: '60px' }} type="text" min={1} max={55} />
+            <input id='num4' style={{ width: '60px' }} type="text" min={1} max={55} />
+            <input id='num5' style={{ width: '60px' }} type="text" min={1} max={55} />
+            <input id='num6' style={{ width: '60px' }} type="text" min={1} max={55} />
+          </div>
+          <button
+            style={{ borderRadius: '0 5px 5px 0', marginTop: '10px', marginBottom: '10px' }}
+            disabled={claimableAmount <= 0 || jackpots.length == 0}
+          >
+            Buy Ticket
+          </button>
+        </form>
+
+        <div>
+          <label>Ticket List</label>
+          {accountTickets.map(item =>
+            <div key={'at_' + item.id.toString()}>
+              <label>Ticket Id: {item.id}</label>
+              <label>Number: 
+                {item.pickedNumbers.map((number, index) =>
+                  <span key={index} style={{marginRight: '5px'}}>{number}</span>
+                )}
+              </label>
+            </div>
+          )}
+          
+        </div>
+        <hr />
+
+        {/* System Section */}
+        <h2>Contract Information</h2>
+        <div>
+          <label>Jackpot List</label>
+          {jackpots.map(item => 
+            <div key={'j_' + item.id}>
+              <label>Jackpot Id: {item.id}</label> | 
+              <label>Locked Amount: <strong>{formatNearAmount(item.lockedAmount)} NEAR</strong> </label> | 
+              <label>Tickets: <strong>{item.noOfTickets}</strong> </label> | 
+              <label>Status: {item.status}</label>
+              
+              <div>
+                <label>Drawing Result: </label>
+                {item.drawedResults.map((result, index) => 
+                  <div key={index}>
+                    <label>Time: {result.createdTime}</label> <span></span>
+                    <label>Number: 
+                      {result.drawedNumbers.map((number, index) =>
+                        <span key={index} style={{marginRight: '5px'}}>{number}</span>
+                      )}
+                    </label>
+                  </div>  
+                )}
+              </div>
+            </div>
+          )}
+          
+        </div>
+        
+        <hr />
+        {/* Contract Owner Section */}
+        { window.contractOwnerId == window.accountId && 
+          <>
+            <h2>Contract Owner</h2>
+            <p>Let do some oprations</p>
+            <div>
+              <button
+                style={{ borderRadius: '5px', marginRight: '10px' }}
+                onClick={async () => {
+                  try {
+                    // make an update call to the smart contract
+                    console.log('Jackpot is creating...')
+                    await window.contract.create_jackpot({}, GAS)
+                    console.log('Jackpot created.')
+                  } catch (e) {
+                    alert('Something went wrong!')
+                    throw e
+                  } finally {
+
+                  }
+                }}
+              >
+                Create Jackpot
+              </button>
+            
+              <button
+                style={{ borderRadius: '5px', marginRight: '10px' }}
+                onClick={async () => {
+                  try {
+                    // make an update call to the smart contract
+                    console.log('Jackpot is drawing...')
+                    let result = await window.contract.draw_jackpot({}, GAS)
+                    console.log('Jackpot drawn with result: ', result)
+                  } catch (e) {
+                    alert('Something went wrong!')
+                    throw e
+                  } finally {
+
+                  }
+                }}
+              >
+                Draw Jackpot
+              </button>
+            </div>
+              
+          </>
+        }
+
       </main>
       {showNotification && <Notification />}
     </>
@@ -195,3 +369,4 @@ function Notification() {
     </aside>
   )
 }
+
