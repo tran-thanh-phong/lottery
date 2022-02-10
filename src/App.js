@@ -1,6 +1,6 @@
 import 'regenerator-runtime/runtime'
 import React from 'react'
-import { login, logout } from './utils'
+import { login, logout, formatTime, formatNumber } from './utils'
 import './global.css'
 
 import getConfig from './config'
@@ -233,12 +233,12 @@ export default function App() {
             Please choose 6 lucky numbers between 1 to 55. Ticket price equals to 1 NEAR.
           </p>
           <div style={{ display: 'flex', gap: '20px'}}>
-            <input id='num1' style={{ width: '60px' }} type="text" min={1} max={55} />
-            <input id='num2' style={{ width: '60px' }} type="text" min={1} max={55} />
-            <input id='num3' style={{ width: '60px' }} type="text" min={1} max={55} />
-            <input id='num4' style={{ width: '60px' }} type="text" min={1} max={55} />
-            <input id='num5' style={{ width: '60px' }} type="text" min={1} max={55} />
-            <input id='num6' style={{ width: '60px' }} type="text" min={1} max={55} />
+            <input id='num1' style={{ width: '70px' }} type="text" min={1} max={55} />
+            <input id='num2' style={{ width: '70px' }} type="text" min={1} max={55} />
+            <input id='num3' style={{ width: '70px' }} type="text" min={1} max={55} />
+            <input id='num4' style={{ width: '70px' }} type="text" min={1} max={55} />
+            <input id='num5' style={{ width: '70px' }} type="text" min={1} max={55} />
+            <input id='num6' style={{ width: '70px' }} type="text" min={1} max={55} />
           </div>
           <button
             style={{ borderRadius: '0 5px 5px 0', marginTop: '10px', marginBottom: '10px' }}
@@ -249,50 +249,75 @@ export default function App() {
         </form>
 
         <div>
-          <label>Ticket List</label>
-          {accountTickets.map(item =>
-            <div key={'at_' + item.id.toString()}>
-              <label>Ticket Id: {item.id}</label>
-              <label>Number: 
-                {item.pickedNumbers.map((number, index) =>
-                  <span key={index} style={{marginRight: '5px'}}>{number}</span>
-                )}
-              </label>
-            </div>
-          )}
-          
+          <br/>
+          <h3>Ticket List</h3>
+          <table>
+            <thead>
+              <tr>
+                <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Ticket Id</td>
+                <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Number</td>
+              </tr>
+            </thead>
+            <tbody>
+              {accountTickets.map(item =>
+                <tr key={'at_' + item.id.toString()}>
+                  <td style={{paddingRight: '10px', paddingLeft: '10px'}}>{item.id}</td>
+                  <td style={{paddingRight: '10px', paddingLeft: '10px'}}>
+                    {item.pickedNumbers.map((number, index) =>
+                      <span key={index} style={{marginRight: '5px'}}>{formatNumber(number)}</span>
+                    )}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
         <hr />
 
         {/* System Section */}
         <h2>Contract Information</h2>
         <div>
-          <label>Jackpot List</label>
+          <h3>Jackpot List</h3>
           {jackpots.map(item => 
             <div key={'j_' + item.id}>
-              <label>Jackpot Id: {item.id}</label> | 
-              <label>Locked Amount: <strong>{formatNearAmount(item.lockedAmount)} NEAR</strong> </label> | 
-              <label>Tickets: <strong>{item.noOfTickets}</strong> </label> | 
-              <label>Status: {item.status}</label>
+              <div style={{display: 'flex'}}>
+                <label>Jackpot Id: {item.id}</label> 
+                <label>Locked Amount: <strong style={{whiteSpace: 'nowrap'}}>{formatNearAmount(item.lockedAmount)} NEAR</strong> </label>
+                <label>Tickets: <strong>{item.noOfTickets}</strong> </label>
+                <label>Status: {item.status}</label>  
+              </div>
               
               <div>
                 <label>Drawing Result: </label>
-                {item.drawedResults.map((result, index) => 
-                  <div key={index}>
-                    <label>Time: {result.createdTime}</label> <span></span>
-                    <label>Number: 
-                      {result.drawedNumbers.map((number, index) =>
-                        <span key={index} style={{marginRight: '5px'}}>{number}</span>
-                      )}
-                    </label>
-                  </div>  
-                )}
+                <table>
+                  <thead>
+                    <tr>
+                      <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Id</td>
+                      <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Time</td>
+                      <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Number</td>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {item.drawedResults.map((result, index) => 
+                      <tr key={index}>
+                        <td style={{paddingRight: '10px', paddingLeft: '10px'}}>{index + 1}</td>
+                        <td style={{paddingRight: '10px', paddingLeft: '10px'}}>{formatTime(result.createdTime)}</td>
+                        <td style={{paddingRight: '10px', paddingLeft: '10px'}}> 
+                          {result.drawedNumbers.map((number, index) =>
+                            <span key={index} style={{marginRight: '5px'}}>{formatNumber(number)}</span>
+                          )}
+                        </td>
+                      </tr>  
+                    )}
+                  </tbody>
+                </table>
+                
               </div>
             </div>
           )}
           
         </div>
-        
+        <br/>
         <hr />
         {/* Contract Owner Section */}
         { window.contractOwnerId == window.accountId && 

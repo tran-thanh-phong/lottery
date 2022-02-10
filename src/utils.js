@@ -60,3 +60,26 @@ export function login() {
   // the private key in localStorage.
   window.walletConnection.requestSignIn(nearConfig.contractName)
 }
+
+export function formatTime(unix1) {
+  let unix = unix1 / 1000000
+  let date = new Date(unix)
+
+  var year = date.getYear().toString()
+  var month = formatNumber(date.getMonth())
+  var day = formatNumber(date.getDay())
+  var hours = formatNumber(date.getHours())
+  var minutes = formatNumber(date.getMinutes())
+  var seconds = formatNumber(date.getSeconds())
+
+  var formattedTime = year + '-' + month + '-' + day + ' ' + hours + ':' + minutes + ':' + seconds
+
+  // console.log('Time: ', formattedTime, 'Unix Time: ', unix, 'From: ', unix1)
+  // console.log('Date: ', date)
+
+  return date.toISOString()
+}
+
+export function formatNumber(number) {
+  return number > 9 ? number.toString() : '0' + number
+}
