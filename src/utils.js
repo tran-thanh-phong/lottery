@@ -19,12 +19,12 @@ export async function initContract() {
   // Initializing our contract APIs by contract name and configuration
   window.contract = await new Contract(window.walletConnection.account(), nearConfig.contractName, {
     // View methods are read only. They don't modify the state, but usually return some value.
-    viewMethods: ['get_owner_id', 'get_account_balance', 'get_jackpots', 'get_account_info_or_default', 'get_account_tickets'],
+    viewMethods: ['get_owner_id', 'get_account_balance', 'get_jackpots', 'get_account_info_or_default', 'get_account_tickets', 'has_initialized'],
     // Change methods can modify the state. But you don't receive the returned value when called.
     changeMethods: ['new', 'set_owner_id', 'create_jackpot', 'deposit', 'withdraw', 'buy_ticket', 'draw_jackpot'],
   })
 
-  //await initializeContract();
+  await initializeContract();
 
   // Account balance
   console.log("Account Id: ", window.accountId);
@@ -38,10 +38,19 @@ export async function initContract() {
 
 export async function initializeContract() {
   try {
-    await window.contract.new({ owner_id: window.accountId });
+    try {
+      let state = await window.contract.has_initialized({});
+      console.log('Contract state: ', state);
+      if (state) {
+        return;
+      }
+    } catch (e){
+      if (/Should be initialized before usage./.test(e.toString())) {
+        await window.contract.new({ owner_id: window.accountId });
+      }
+    }    
   } catch (e) {
     if (!/Already initialized!/.test(e.toString())) {
-      //throw e;
       console.log(e);
     }
   }

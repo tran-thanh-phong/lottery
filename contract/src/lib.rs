@@ -29,7 +29,6 @@ type TicketId = u64;
 type JackpotId = u32;
 
 #[derive(BorshSerialize, BorshDeserialize)]
-//#[serde(crate = "near_sdk::serde")]
 pub struct AccountInfo {
     balance: Balance,
     // TODO: Should be defined as reference type
@@ -50,11 +49,11 @@ impl Serialize for AccountInfo {
     }
 }
 
-impl Default for AccountInfo {
-    fn default() -> Self {
+impl AccountInfo {
+    pub fn new(key: AccountId) -> Self {
         Self {
             balance: 0,
-            ticket_ids: Vector::new(b"ticket_id".to_vec()),
+            ticket_ids: Vector::new(format!("ta{}", key).as_bytes()),
             created_time: get_time_now(),
         }
     }
@@ -111,7 +110,7 @@ impl Serialize for DrawingResult {
     }
 }
 
-fn get_random_number(max: u8, ran_no: u8) -> u8 {
+fn get_random_number(max: u64, mut ran_no: u64) -> u64 {
     let mut random_number = 0; // *env::random_seed().get(0).unwrap();
 
     // TODO: This is used for testing, try using #DEBUG
@@ -121,13 +120,11 @@ fn get_random_number(max: u8, ran_no: u8) -> u8 {
             time_value /= 10;
         }
 
-        let mut ran_no: u64 = ran_no as u64;
-
         if ran_no <= 0 {
             ran_no = 1;
         }
 
-        random_number = u8::try_from((time_value + ran_no) / (113 + ran_no) * (77 + ran_no) % max as u64).ok().unwrap();
+        random_number = (time_value + ran_no) / (113 + ran_no) * (77 + ran_no) % max;
     }
 
     random_number % max + 1
@@ -155,7 +152,7 @@ impl Default for DrawingResult {
         for i in 0..6 {
             loop {
                 ran_no += 1;
-                let number = get_random_number(MAX_DRAWING_NUMBER, ran_no);
+                let number = u8::try_from(get_random_number(MAX_DRAWING_NUMBER.into(), ran_no.into())).ok().unwrap();
                 let mut j = 0;
                 while j < i {
                     if drawed_numbers[j] == number {
@@ -200,6 +197,7 @@ impl Serialize for JackpotStatus {
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct Jackpot {
     id: JackpotId,
+    ticket_price: u128,
     locked_amount: Balance,
     ticket_ids: Vector<TicketId>,
     win_ticket_ids: Vector<TicketId>,
@@ -210,13 +208,14 @@ pub struct Jackpot {
 }
 
 impl Jackpot {
-    pub fn new(id: u32, start_time: Timestamp) -> Self {
+    pub fn new(id: u32, start_time: Timestamp, ticket_price: u128) -> Self {
         Self {
             id,
+            ticket_price,
             locked_amount: 0,
-            ticket_ids: Vector::new(b"ticket_id".to_vec()),
-            win_ticket_ids: Vector::new(b"win_ticket_id".to_vec()),
-            drawed_results: Vector::new(b"drawed_result".to_vec()),
+            ticket_ids: Vector::new(format!("tj{}", id).as_bytes()),
+            win_ticket_ids: Vector::new(format!("tjw{}", id).as_bytes()),
+            drawed_results: Vector::new(format!("dr{}", id).as_bytes()),
             start_time,
             end_time: Option::None,
             created_time: get_time_now(),
@@ -253,6 +252,7 @@ impl Serialize for Jackpot {
     {
         let mut state = serializer.serialize_struct("Jackpot", 1)?;
         state.serialize_field("id", &self.id)?;
+        state.serialize_field("ticketPrice", &self.ticket_price.to_string())?;
         state.serialize_field("lockedAmount", &self.locked_amount.to_string())?;
         state.serialize_field("startTime", &self.start_time)?;
         state.serialize_field("createdTime", &self.created_time)?;
@@ -301,8 +301,12 @@ impl Lottery {
         }
     }
 
+    pub fn has_initialized(&self) -> bool {
+        env::state_exists()
+    }
+
     pub fn get_number(&self) -> u8{
-        let number: u8 = get_random_number(MAX_DRAWING_NUMBER, 0);
+        let number: u8 = u8::try_from(get_random_number(MAX_DRAWING_NUMBER.into(), 0)).ok().unwrap();
         println!("The random number is: {}", number);
         number
     }
@@ -320,7 +324,7 @@ impl Lottery {
 
     pub fn get_account_info_or_default(&self, account_id: &AccountId) -> AccountInfo {
         match self.account_infoes.get(&account_id) {
-            None => AccountInfo::default(),
+            None => AccountInfo::new((&account_id).to_string()),
             Some(a) => a,
         }
     }
@@ -332,6 +336,7 @@ impl Lottery {
     pub fn get_account_tickets(&self, account_id: &AccountId) -> Vec<Ticket> {
         let ticket_ids = self.get_account_info_or_default(&account_id).ticket_ids.to_vec();
         let mut tickets = Vec::new();
+
         for i in 0..ticket_ids.len() {
             let ticket_id = ticket_ids.get(i).unwrap();
             let ticket = self.tickets.get(ticket_id).unwrap();
@@ -394,7 +399,7 @@ impl Lottery {
         self.jackpots.push(&jackpot);
     }
 
-    pub fn create_jackpot(&mut self) {
+    pub fn create_jackpot(&mut self, mut ticket_price: Option<u128>) {
         // Check account right (The signer must be the contract owner)
         let account_id = env::signer_account_id();
         assert!(account_id == self.owner_id, "The signer must be the contract owner.");
@@ -408,10 +413,14 @@ impl Lottery {
             }
         }
 
+        if ticket_price.is_none() {
+            ticket_price = Some(ONE_NEAR);
+        }
+
         // Create a new jackpot
         let id = self.generate_jackpot_id();
         let start_time = get_time_now();
-        let jackpot = Jackpot::new(id, start_time);
+        let jackpot = Jackpot::new(id, start_time, ticket_price.unwrap());
 
         self.jackpots.push(&jackpot);
     }
@@ -420,13 +429,15 @@ impl Lottery {
         let account_id = env::signer_account_id();
         let mut account_info = self.get_account_info_or_default(&account_id);
 
-        // Check user balance must be enough to by a ticket
-        assert!(account_info.balance >= ONE_NEAR, "No balance to buy ticket!!!");
-
         // Check the current Jackpot is available for buying tickets
         let latest_jackpot = self.get_latest_jackpot();
         assert!(latest_jackpot.is_some() && matches!(latest_jackpot.as_ref().unwrap().get_status(), JackpotStatus::Open), "There is no open jackpot.");
         
+        // Check user balance must be enough to by a ticket
+        let mut latest_jackpot = latest_jackpot.unwrap();
+        let ticket_price = latest_jackpot.ticket_price;
+        assert!(account_info.balance >= ticket_price, "No balance to buy ticket!!!");
+
         // Create a ticket and add to list
         let ticket_id = self.generate_ticket_id();
 
@@ -450,12 +461,11 @@ impl Lottery {
         self.tickets.insert(&ticket_id, &ticket);
 
         // Add the new ticket to current Jackpot
-        let mut latest_jackpot = latest_jackpot.unwrap();
         latest_jackpot.ticket_ids.push(&ticket_id);
 
         // Descrease account balance and increase locked balance
-        account_info.balance -= ONE_NEAR;
-        latest_jackpot.locked_amount += ONE_NEAR;
+        account_info.balance -= ticket_price;
+        latest_jackpot.locked_amount += ticket_price;
 
         // Add ticket to current account
         account_info.ticket_ids.push(&ticket_id);
@@ -465,7 +475,7 @@ impl Lottery {
         self.update_latest_jackpot(&latest_jackpot);
     }
 
-    pub fn draw_jackpot(&mut self) -> bool{
+    pub fn draw_jackpot(&mut self, force_win: bool) -> bool{
         // Check account right (The signer must be the contract owner)
         let account_id = env::signer_account_id();
         assert!(account_id == self.owner_id, "The signer must be the contract owner.");
@@ -481,7 +491,16 @@ impl Lottery {
 
         let mut latest_jackpot = latest_jackpot.unwrap();
 
-        let result = DrawingResult::default();
+        let mut result = DrawingResult::default();
+
+        if force_win {
+            let no_of_tickets = latest_jackpot.ticket_ids.len();
+            let lucky_ticket_index = get_random_number(no_of_tickets, 0) - 1;
+            let lucky_ticket_id = latest_jackpot.ticket_ids.get(lucky_ticket_index).unwrap();
+            let lucky_ticket = self.tickets.get(&lucky_ticket_id).unwrap();
+
+            result.drawed_numbers = lucky_ticket.picked_numbers.clone();
+        }
 
         // Add new result to list
         latest_jackpot.drawed_results.push(&result);
@@ -523,10 +542,6 @@ impl Lottery {
         self.update_latest_jackpot(&latest_jackpot);
 
         if matches!(latest_jackpot.get_status(), JackpotStatus::Close) {
-
-            // Create another jackpot
-            self.create_jackpot();
-
             return true;
         }
 
@@ -580,7 +595,7 @@ mod tests {
         let context = get_context(vec![], true);
         testing_env!(context);
 
-        let mut contract = Lottery::new(String::from("alice_near"));
+        let contract = Lottery::new(String::from("alice_near"));
         
         assert_eq!(
             "alice_near".to_string(),
@@ -644,16 +659,16 @@ mod tests {
 
         assert!(contract.get_latest_jackpot().is_none());
 
-        contract.create_jackpot();
+        contract.create_jackpot(Option::None);
 
         assert!(contract.get_latest_jackpot().is_some());
         assert_eq!(contract.get_jackpots().len(), 1);
 
-        contract.create_jackpot();
+        contract.create_jackpot(Option::None);
         assert_eq!(contract.get_jackpots().len(), 1);
     }
 
-    //#[test]
+    #[test]
     fn create_drawed_result() {
         let context = get_context(vec![], false);
         testing_env!(context);
@@ -661,12 +676,12 @@ mod tests {
         let result = DrawingResult::default();
         let numbers = result.drawed_numbers;
 
-        let result2 = DrawingResult::default();
-        let numbers2 = result2.drawed_numbers;
+        // let result2 = DrawingResult::default();
+        // let numbers2 = result2.drawed_numbers;
         
         println!("Creating a DrawingResult {:?}", numbers);
 
-        let number = get_random_number(MAX_DRAWING_NUMBER, 0);
+        let number = get_random_number(MAX_DRAWING_NUMBER.into(), 0);
         println!("Random number is: {}", number);
 
         assert_eq!(numbers, numbers);
@@ -698,7 +713,7 @@ mod tests {
 
         // Create a jackpot
         println!("Create a jackpot");
-        contract.create_jackpot();
+        contract.create_jackpot(Option::None);
 
         assert!(contract.get_latest_jackpot().is_some());
 
@@ -725,8 +740,129 @@ mod tests {
     }
 
     #[test]
-    fn draw() {
+    fn buy_ticket_two_accounts() {
+        let account_1 = String::from("bob_near");
+        let account_2 = String::from("bob_near_2");
+        let deposit_amount_1 = ONE_NEAR * 10;
+        let deposit_amount_2 = ONE_NEAR * 20;
+        let deposit_amount_1_bought_ticket = ONE_NEAR * 7;
+        let deposit_amount_2_bought_ticket = ONE_NEAR * 18;
 
+        let mut context = get_context(vec![], false);
+        context.signer_account_id = account_1.clone();
+        context.attached_deposit = deposit_amount_1;
+        testing_env!(context);
+
+        let mut contract = Lottery::new(String::from("bob_near"));
+
+        assert!(contract.get_latest_jackpot().is_none());
+
+        // Create a jackpot
+        println!("Create a jackpot");
+        contract.create_jackpot(Option::None);
+
+        assert!(contract.get_latest_jackpot().is_some());
+
+        // Deposit fund to bob_near
+        println!("Deposit fund to bob_near");
+        contract.deposit();
+
+        // Buy ticket for bob_near
+        println!("Buy ticket for bob_near");
+        let account_1_ticket_1_expected = [1, 2, 3, 4, 5, 6];
+        contract.buy_ticket(account_1_ticket_1_expected);
+
+        let account_1_ticket_2_expected = [1, 3, 4, 5, 6, 7];
+        contract.buy_ticket(account_1_ticket_2_expected);
+
+        let account_1_ticket_3_expected = [1, 4, 5, 6, 7, 8];
+        contract.buy_ticket(account_1_ticket_3_expected);
+
+        // Get mock blockchain context for bob_near_2
+        let mut context = get_context(vec![], false);
+        context.signer_account_id = account_2.clone();
+        context.attached_deposit = deposit_amount_2;
+        testing_env!(context);
+
+        // Deposit fund to bob_near_2
+        println!("Deposit fund to bob_near_2");
+        contract.deposit();
+
+        // Buy ticket for bob_near_2
+        println!("Buy ticket for bob_near_2");
+        let account_2_ticket_1_expected = [2, 3, 4, 5, 6, 7];
+        contract.buy_ticket(account_2_ticket_1_expected);
+        
+        let account_2_ticket_2_expected = [2, 4, 5, 6, 7, 8];
+        contract.buy_ticket(account_2_ticket_2_expected);
+
+        // ---------------- Test balance ----------------
+        println!("Test balance of account 1");
+        assert_eq!(
+            U128::from(deposit_amount_1_bought_ticket),
+            //U128::from(deposit_amount_1),
+            contract.get_account_balance(&account_1)
+        );
+
+        println!("Test balance of account 2");
+        assert_eq!(
+            U128::from(deposit_amount_2_bought_ticket),
+            contract.get_account_balance(&account_2)
+        );
+
+        println!("Test balance of account 3 (Not existed)");
+        assert_eq!(
+            U128::from(0),
+            contract.get_account_balance(&String::from("bob_near_3"))
+        );
+
+        // Debug account infoes
+        println!("---- Account Infoes ----");
+        let vec = contract.account_infoes.to_vec();
+        for i in 0..vec.len() {
+            let (account_id, account_info) = &vec[i];
+            println!("Account Id: {}, Balance: {}, Tickets: {:?}", account_id, account_info.balance, account_info.ticket_ids);
+            let ticket_ids = account_info.ticket_ids.to_vec();
+            for j in 0..ticket_ids.len() {
+                println!("--> Ticket id {}: {}", j, ticket_ids[j]);
+            }
+        }
+        println!("---- End of Account Infoes ----");
+
+        // ---------------- Test ticket ----------------
+        let tickets = contract.get_account_tickets(&account_1);
+        let account_1_ticket_1_actual = tickets.get(0).unwrap().picked_numbers;
+        
+        println!("Test ticket of account 1");
+        assert_eq!(account_1_ticket_1_expected, account_1_ticket_1_actual);
+        //assert_eq!(0, tickets.len());
+
+        let tickets = contract.get_account_tickets(&account_2);
+        let account_2_ticket_1_actual = tickets.get(0).unwrap().picked_numbers;
+
+        println!("Test ticket of account 2");
+        assert_eq!(account_2_ticket_1_expected, account_2_ticket_1_actual);
+
+        // // Check ticket id
+        // println!("Check ticket id");
+        // assert_eq!(1, latest_jackpot.ticket_ids.len());
+    }
+
+    #[test]
+    fn test_vector() {
+        let context = get_context(vec![], false);
+        testing_env!(context);
+
+        let mut vec1 : Vector<u8> = Vector::new(b"v".to_vec());
+        let mut vec2 : Vector<u8> = Vector::new(b"v1".to_vec());
+
+        vec1.push(&1);
+        vec1.push(&2);
+
+        vec2.push(&3);
+
+        println!("Vector 1: [{}]", vec1.to_vec()[0]);
+        println!("Vector 2: [{}]", vec2.to_vec()[0]);
     }
 
     #[test]

@@ -35,7 +35,6 @@ export default function App() {
       getClaimableAmountFromContract()
       getJackpotListFromContract()
       getAccountInfoFromContract()
-      getAccountTicketsFromContract()
     },
 
     // The second argument to useEffect tells React when to re-run the effect
@@ -59,6 +58,8 @@ export default function App() {
       .then(result => {
         console.log('Get jackpot list from contract: ', result)
         setJackpots(result)
+
+        getAccountTicketsFromContract(result)
       })
   }
 
@@ -70,12 +71,27 @@ export default function App() {
       })
   }
 
-  function getAccountTicketsFromContract() {
+  function getAccountTicketsFromContract(jackpots) {
     window.contract.get_account_tickets({account_id: window.accountId})
       .then(result => {
         console.log('Get Account Tickets from contract: ', result)
+        result.map(item => {
+          let jackpot = jackpots.find(j => j.startTime <= item.createdTime && (!j.endTime || item.createdTime <= j.endTime))
+          console.log('Jackpots', jackpots , 'Jackpot', jackpot)
+          item.jackpotId = jackpot.id
+          item.result = jackpot.winTicketIds.includes(item.id) ? 'Won' : jackpot.status == 'Open' ? 'Waiting' : 'Loss'
+        })
+        console.log('Get Account Tickets from contract: ', result)
         setAccountTickets(result)
       })
+  }
+
+  function hasOpenJackpot() {
+    if (!jackpots || jackpots.length == 0) {
+      return false
+    }
+
+    return jackpots[jackpots.length - 1].status == 'Open'
   }
 
   // if not signed in, return early with sign-in prompt
@@ -242,7 +258,7 @@ export default function App() {
           </div>
           <button
             style={{ borderRadius: '0 5px 5px 0', marginTop: '10px', marginBottom: '10px' }}
-            disabled={claimableAmount <= 0 || jackpots.length == 0}
+            disabled={claimableAmount <= 0 || !hasOpenJackpot()}
           >
             Buy Ticket
           </button>
@@ -254,19 +270,25 @@ export default function App() {
           <table>
             <thead>
               <tr>
-                <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Ticket Id</td>
-                <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Number</td>
+                <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Id</td>
+                <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Jackpot</td>
+                <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Time</td>
+                <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Numbers</td>
+                <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Result</td>
               </tr>
             </thead>
             <tbody>
               {accountTickets.map(item =>
                 <tr key={'at_' + item.id.toString()}>
                   <td style={{paddingRight: '10px', paddingLeft: '10px'}}>{item.id}</td>
+                  <td style={{paddingRight: '10px', paddingLeft: '10px'}}>{item.jackpotId}</td>
+                  <td style={{paddingRight: '10px', paddingLeft: '10px'}}>{formatTime(item.createdTime)}</td>
                   <td style={{paddingRight: '10px', paddingLeft: '10px'}}>
                     {item.pickedNumbers.map((number, index) =>
                       <span key={index} style={{marginRight: '5px'}}>{formatNumber(number)}</span>
                     )}
                   </td>
+                  <td style={{paddingRight: '10px', paddingLeft: '10px'}}>{item.result}</td>
                 </tr>
               )}
             </tbody>
@@ -280,11 +302,41 @@ export default function App() {
           <h3>Jackpot List</h3>
           {jackpots.map(item => 
             <div key={'j_' + item.id}>
-              <div style={{display: 'flex'}}>
-                <label>Jackpot Id: {item.id}</label> 
-                <label>Locked Amount: <strong style={{whiteSpace: 'nowrap'}}>{formatNearAmount(item.lockedAmount)} NEAR</strong> </label>
-                <label>Tickets: <strong>{item.noOfTickets}</strong> </label>
-                <label>Status: {item.status}</label>  
+              <div style={{display: 'flex', flexDirection: 'column'}}>
+                <table>
+                  <tbody>
+                    <tr>
+                      <td>Jackpot Id:</td>
+                      <td>{item.id}</td>
+                    </tr>
+                    <tr>
+                      <td>Ticket Price:</td>
+                      <td><strong style={{whiteSpace: 'nowrap'}}>{formatNearAmount(item.ticketPrice)} NEAR</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Locked Amount:</td>
+                      <td><strong style={{whiteSpace: 'nowrap'}}>{formatNearAmount(item.lockedAmount)} NEAR</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Tickets:</td>
+                      <td><strong>{item.noOfTickets}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Status:</td>
+                      <td>{item.status}</td>
+                    </tr>
+                    <tr>
+                      <td>Open Time:</td>
+                      <td>{formatTime(item.startTime)}</td>
+                    </tr>
+                    {item.endTime && 
+                      <tr>
+                        <td>Close Time:</td>
+                        <td>{formatTime(item.endTime)}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
               </div>
               
               <div>
@@ -294,7 +346,7 @@ export default function App() {
                     <tr>
                       <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Id</td>
                       <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Time</td>
-                      <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Number</td>
+                      <td style={{paddingRight: '10px', paddingLeft: '10px'}}>Numbers</td>
                     </tr>
                   </thead>
                   <tbody>
@@ -313,6 +365,7 @@ export default function App() {
                 </table>
                 
               </div>
+              <br/>
             </div>
           )}
           
@@ -327,6 +380,7 @@ export default function App() {
             <div>
               <button
                 style={{ borderRadius: '5px', marginRight: '10px' }}
+                disabled={hasOpenJackpot()}
                 onClick={async () => {
                   try {
                     // make an update call to the smart contract
@@ -346,11 +400,12 @@ export default function App() {
             
               <button
                 style={{ borderRadius: '5px', marginRight: '10px' }}
+                disabled={!hasOpenJackpot()}
                 onClick={async () => {
                   try {
                     // make an update call to the smart contract
                     console.log('Jackpot is drawing...')
-                    let result = await window.contract.draw_jackpot({}, GAS)
+                    let result = await window.contract.draw_jackpot({force_win: false}, GAS)
                     console.log('Jackpot drawn with result: ', result)
                   } catch (e) {
                     alert('Something went wrong!')
@@ -361,6 +416,25 @@ export default function App() {
                 }}
               >
                 Draw Jackpot
+              </button>
+              <button
+                style={{ borderRadius: '5px', marginRight: '10px' }}
+                disabled={!hasOpenJackpot()}
+                onClick={async () => {
+                  try {
+                    // make an update call to the smart contract
+                    console.log('Jackpot is drawing...')
+                    let result = await window.contract.draw_jackpot({force_win: true}, GAS)
+                    console.log('Jackpot drawn with result: ', result)
+                  } catch (e) {
+                    alert('Something went wrong!')
+                    throw e
+                  } finally {
+
+                  }
+                }}
+              >
+                Draw to Win
               </button>
             </div>
               
