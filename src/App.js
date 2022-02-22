@@ -249,12 +249,12 @@ export default function App() {
             Please choose 6 lucky numbers between 1 to 55. Ticket price equals to 1 NEAR.
           </p>
           <div style={{ display: 'flex', gap: '20px'}}>
-            <input id='num1' style={{ width: '70px' }} type="text" min={1} max={55} />
-            <input id='num2' style={{ width: '70px' }} type="text" min={1} max={55} />
-            <input id='num3' style={{ width: '70px' }} type="text" min={1} max={55} />
-            <input id='num4' style={{ width: '70px' }} type="text" min={1} max={55} />
-            <input id='num5' style={{ width: '70px' }} type="text" min={1} max={55} />
-            <input id='num6' style={{ width: '70px' }} type="text" min={1} max={55} />
+            <input id='num1' style={{ width: '70px', padding: '10px', textAlign: 'center' }} type="text" min={1} max={55} />
+            <input id='num2' style={{ width: '70px', padding: '10px', textAlign: 'center' }} type="text" min={1} max={55} />
+            <input id='num3' style={{ width: '70px', padding: '10px', textAlign: 'center' }} type="text" min={1} max={55} />
+            <input id='num4' style={{ width: '70px', padding: '10px', textAlign: 'center' }} type="text" min={1} max={55} />
+            <input id='num5' style={{ width: '70px', padding: '10px', textAlign: 'center' }} type="text" min={1} max={55} />
+            <input id='num6' style={{ width: '70px', padding: '10px', textAlign: 'center' }} type="text" min={1} max={55} />
           </div>
           <button
             style={{ borderRadius: '0 5px 5px 0', marginTop: '10px', marginBottom: '10px' }}
@@ -314,7 +314,7 @@ export default function App() {
                       <td><strong style={{whiteSpace: 'nowrap'}}>{formatNearAmount(item.ticketPrice)} NEAR</strong></td>
                     </tr>
                     <tr>
-                      <td>Locked Amount:</td>
+                      <td>Prize:</td>
                       <td><strong style={{whiteSpace: 'nowrap'}}>{formatNearAmount(item.lockedAmount)} NEAR</strong></td>
                     </tr>
                     <tr>
@@ -385,7 +385,7 @@ export default function App() {
                   try {
                     // make an update call to the smart contract
                     console.log('Jackpot is creating...')
-                    await window.contract.create_jackpot({}, GAS)
+                    await window.contract.create_jackpot({}, GAS, parseNearAmount('10'))
                     console.log('Jackpot created.')
                   } catch (e) {
                     alert('Something went wrong!')

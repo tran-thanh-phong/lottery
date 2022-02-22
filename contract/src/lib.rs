@@ -28,69 +28,15 @@ const MAX_DRAWING_NUMBER: u8 = 55;
 type TicketId = u64;
 type JackpotId = u32;
 
-#[derive(BorshSerialize, BorshDeserialize)]
-pub struct AccountInfo {
-    balance: Balance,
-    // TODO: Should be defined as reference type
-    ticket_ids: Vector<TicketId>,
-    created_time: Timestamp
-}
+use crate::utils::*;
+pub use crate::account::*;
+pub use crate::ticket::*;
+pub use crate::jackpot::*;
 
-impl Serialize for AccountInfo {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("AccountInfo", 3)?;
-        state.serialize_field("balance", &self.balance.to_string())?;
-        state.serialize_field("ticketIds", &self.ticket_ids.to_vec())?;
-        state.serialize_field("createdTime", &self.created_time)?;
-        state.end()
-    }
-}
-
-impl AccountInfo {
-    pub fn new(key: AccountId) -> Self {
-        Self {
-            balance: 0,
-            ticket_ids: Vector::new(format!("ta{}", key).as_bytes()),
-            created_time: get_time_now(),
-        }
-    }
-}
-
-#[derive(BorshDeserialize, BorshSerialize)]
-pub struct Ticket {
-    id: TicketId,
-    account_id: AccountId,   
-    picked_numbers: [u8; 6],
-    created_time: Timestamp
-}
-
-impl Serialize for Ticket {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("Ticket", 4)?;
-        state.serialize_field("id", &self.id)?;
-        state.serialize_field("accountId", &self.account_id)?;
-        state.serialize_field("pickedNumbers", &self.picked_numbers)?;
-        state.serialize_field("createdTime", &self.created_time)?;
-        state.end()
-    }
-}
-
-impl Ticket {
-    pub fn new(id: &TicketId, account_id: &AccountId, picked_numbers: &[u8; 6]) -> Self {
-        Self {
-            id: *id,
-            account_id: account_id.clone(),
-            picked_numbers: *picked_numbers,
-            created_time: get_time_now(),
-        }
-    }
-}
+mod utils;
+mod account;
+mod ticket;
+mod jackpot;
 
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct DrawingResult {
@@ -108,40 +54,6 @@ impl Serialize for DrawingResult {
         state.serialize_field("createdTime", &self.created_time)?;
         state.end()
     }
-}
-
-fn get_random_number(max: u64, mut ran_no: u64) -> u64 {
-    let mut random_number = 0; // *env::random_seed().get(0).unwrap();
-
-    // TODO: This is used for testing, try using #DEBUG
-    if random_number == 0 {
-        let mut time_value = get_time_now();
-        while time_value % 10 == 0 {
-            time_value /= 10;
-        }
-
-        if ran_no <= 0 {
-            ran_no = 1;
-        }
-
-        random_number = (time_value + ran_no) / (113 + ran_no) * (77 + ran_no) % max;
-    }
-
-    random_number % max + 1
-}
-
-fn get_time_now() -> Timestamp {
-    env::block_timestamp()
-}
-
-fn compare_numbers(n1: &[u8; 6], n2: &[u8; 6]) -> bool {
-    for i in [0..6] {
-        if n1[i.clone()] != n2[i] { 
-            return false;
-        }
-    }
-
-    true
 }
 
 impl Default for DrawingResult {
@@ -174,97 +86,6 @@ impl Default for DrawingResult {
             drawed_numbers,
             created_time: get_time_now(),
         }
-    }
-}
-
-pub enum JackpotStatus {
-    Open,
-    Close
-}
-
-impl Serialize for JackpotStatus {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match *self {
-            JackpotStatus::Open => serializer.serialize_unit_variant("JackpotStatus", 0, "Open"),
-            JackpotStatus::Close => serializer.serialize_unit_variant("JackpotStatus", 1, "Close"),
-        }
-    }
-}
-
-#[derive(BorshDeserialize, BorshSerialize)]
-pub struct Jackpot {
-    id: JackpotId,
-    ticket_price: u128,
-    locked_amount: Balance,
-    ticket_ids: Vector<TicketId>,
-    win_ticket_ids: Vector<TicketId>,
-    drawed_results: Vector<DrawingResult>,
-    start_time: Timestamp,
-    end_time: Option<Timestamp>,
-    created_time: Timestamp,
-}
-
-impl Jackpot {
-    pub fn new(id: u32, start_time: Timestamp, ticket_price: u128) -> Self {
-        Self {
-            id,
-            ticket_price,
-            locked_amount: 0,
-            ticket_ids: Vector::new(format!("tj{}", id).as_bytes()),
-            win_ticket_ids: Vector::new(format!("tjw{}", id).as_bytes()),
-            drawed_results: Vector::new(format!("dr{}", id).as_bytes()),
-            start_time,
-            end_time: Option::None,
-            created_time: get_time_now(),
-        }
-    }
-
-    pub fn get_status(&self) -> JackpotStatus {
-        let now = get_time_now();
-        match self.end_time {
-            None => {
-                if self.start_time <= now {
-                    JackpotStatus::Open
-                }
-                else {
-                    JackpotStatus::Close
-                }
-            },
-            Some(t) => {
-                if self.start_time <= now && now <= t {
-                    JackpotStatus::Open
-                }
-                else {
-                    JackpotStatus::Close
-                }
-            },
-        }
-    }
-}
-
-impl Serialize for Jackpot {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("Jackpot", 1)?;
-        state.serialize_field("id", &self.id)?;
-        state.serialize_field("ticketPrice", &self.ticket_price.to_string())?;
-        state.serialize_field("lockedAmount", &self.locked_amount.to_string())?;
-        state.serialize_field("startTime", &self.start_time)?;
-        state.serialize_field("createdTime", &self.created_time)?;
-        state.serialize_field("endTime", &self.end_time)?;
-        state.serialize_field("status", &self.get_status())?;
-        
-        state.serialize_field("noOfTickets", &self.ticket_ids.len())?;
-        state.serialize_field("ticketIds", &self.ticket_ids.to_vec())?;
-        state.serialize_field("winTicketIds", &self.win_ticket_ids.to_vec())?;
-        state.serialize_field("drawedResults", &self.drawed_results.to_vec())?;
-
-        state.end()
     }
 }
 
@@ -399,7 +220,8 @@ impl Lottery {
         self.jackpots.push(&jackpot);
     }
 
-    pub fn create_jackpot(&mut self, mut ticket_price: Option<u128>) {
+    #[payable]
+    pub fn create_jackpot(&mut self, ticket_price: Option<u128>) {
         // Check account right (The signer must be the contract owner)
         let account_id = env::signer_account_id();
         assert!(account_id == self.owner_id, "The signer must be the contract owner.");
@@ -413,14 +235,13 @@ impl Lottery {
             }
         }
 
-        if ticket_price.is_none() {
-            ticket_price = Some(ONE_NEAR);
-        }
-
+        let ticket_price = ticket_price.unwrap_or(ONE_NEAR);
+        let initialized_amount = env::attached_deposit();
+        
         // Create a new jackpot
         let id = self.generate_jackpot_id();
         let start_time = get_time_now();
-        let jackpot = Jackpot::new(id, start_time, ticket_price.unwrap());
+        let jackpot = Jackpot::new(id, start_time, ticket_price, initialized_amount);
 
         self.jackpots.push(&jackpot);
     }
@@ -659,12 +480,12 @@ mod tests {
 
         assert!(contract.get_latest_jackpot().is_none());
 
-        contract.create_jackpot(Option::None);
+        contract.create_jackpot(None, None);
 
         assert!(contract.get_latest_jackpot().is_some());
         assert_eq!(contract.get_jackpots().len(), 1);
 
-        contract.create_jackpot(Option::None);
+        contract.create_jackpot(None, None);
         assert_eq!(contract.get_jackpots().len(), 1);
     }
 
@@ -713,7 +534,7 @@ mod tests {
 
         // Create a jackpot
         println!("Create a jackpot");
-        contract.create_jackpot(Option::None);
+        contract.create_jackpot(None, None);
 
         assert!(contract.get_latest_jackpot().is_some());
 
@@ -759,7 +580,7 @@ mod tests {
 
         // Create a jackpot
         println!("Create a jackpot");
-        contract.create_jackpot(Option::None);
+        contract.create_jackpot(None, None);
 
         assert!(contract.get_latest_jackpot().is_some());
 
